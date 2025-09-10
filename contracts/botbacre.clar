@@ -219,3 +219,32 @@ property-id: property-id, holder: tx-sender, distribution-id: distribution-id })
         { property-id: property-id, holder: tx-sender, distribution-id: distribution-id } 
         { claimed: true }) 
       (ok claim-amount)))) 
+      ;; Security controls and access management 
+(define-public (emergency-pause-property (property-id uint)) 
+  (let ((property-data (unwrap! (map-get? properties { property-id: property-id }) 
+ERR-PROPERTY-NOT-FOUND))) 
+    (asserts! (or (is-eq tx-sender CONTRACT-OWNER) (is-eq tx-sender (get owner 
+property-data))) ERR-NOT-AUTHORIZED) 
+     
+    (map-set properties  
+      { property-id: property-id } 
+      (merge property-data { is-active: false })) 
+    (ok true))) 
+ 
+(define-public (resume-property (property-id uint)) 
+  (let ((property-data (unwrap! (map-get? properties { property-id: property-id }) 
+ERR-PROPERTY-NOT-FOUND))) 
+    (asserts! (or (is-eq tx-sender CONTRACT-OWNER) (is-eq tx-sender (get owner 
+property-data))) ERR-NOT-AUTHORIZED) 
+     
+    (map-set properties  
+      { property-id: property-id } 
+      (merge property-data { is-active: true })) 
+    (ok true))) 
+ 
+(define-public (transfer-property-ownership (property-id uint) (new-owner principal)) 
+  (let ((property-data (unwrap! (map-get? properties { property-id: property-id }) 
+ERR-PROPERTY-NOT-FOUND)) 
+        (current-owner (get owner property-data)) 
+        (owner-balance (get-token-balance-or-zero property-id current-owner))) 
+    (asserts! (is-eq tx-sender current-owner) ERR-NOT-AUTHORIZED)

@@ -219,3 +219,95 @@ property-id: property-id, holder: tx-sender, distribution-id: distribution-id })
         { property-id: property-id, holder: tx-sender, distribution-id: distribution-id } 
         { claimed: true }) 
       (ok claim-amount)))) 
+      ;; Security controls and access management 
+(define-public (emergency-pause-property (property-id uint)) 
+  (let ((property-data (unwrap! (map-get? properties { property-id: property-id }) 
+ERR-PROPERTY-NOT-FOUND))) 
+    (asserts! (or (is-eq tx-sender CONTRACT-OWNER) (is-eq tx-sender (get owner 
+property-data))) ERR-NOT-AUTHORIZED) 
+     
+    (map-set properties  
+      { property-id: property-id } 
+      (merge property-data { is-active: false })) 
+    (ok true))) 
+ 
+(define-public (resume-property (property-id uint)) 
+  (let ((property-data (unwrap! (map-get? properties { property-id: property-id }) 
+ERR-PROPERTY-NOT-FOUND))) 
+    (asserts! (or (is-eq tx-sender CONTRACT-OWNER) (is-eq tx-sender (get owner 
+property-data))) ERR-NOT-AUTHORIZED) 
+     
+    (map-set properties  
+      { property-id: property-id } 
+      (merge property-data { is-active: true })) 
+    (ok true))) 
+ 
+(define-public (transfer-property-ownership (property-id uint) (new-owner principal)) 
+  (let ((property-data (unwrap! (map-get? properties { property-id: property-id }) 
+ERR-PROPERTY-NOT-FOUND)) 
+        (current-owner (get owner property-data)) 
+        (owner-balance (get-token-balance-or-zero property-id current-owner))) 
+    (asserts! (is-eq tx-sender current-owner) ERR-NOT-AUTHORIZED)
+        (map-set properties  
+      { property-id: property-id } 
+      (merge property-data { owner: new-owner })) 
+     
+    (if (> owner-balance u0) 
+      (begin 
+        (map-set token-balances  
+          { property-id: property-id, holder: current-owner } 
+          { balance: u0 }) 
+        (map-set token-balances  
+          { property-id: property-id, holder: new-owner } 
+          { balance: owner-balance })) 
+      true) 
+    (ok true)))
+    ;; Property valuation and liquidation functions 
+(define-public (update-property-value (property-id uint) (new-value uint)) 
+  (let ((property-data (unwrap! (map-get? properties { property-id: property-id }) 
+ERR-PROPERTY-NOT-FOUND))) 
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED) 
+    (asserts! (> new-value u0) ERR-INVALID-AMOUNT) 
+     
+    (map-set properties  
+      { property-id: property-id } 
+      (merge property-data {  
+        property-value: new-value, 
+        token-price: (/ new-value (get total-tokens property-data)) 
+      })) 
+    (ok true))) 
+ 
+(define-public (liquidate-property (property-id uint)) 
+  (let ((property-data (unwrap! (map-get? properties { property-id: property-id }) 
+ERR-PROPERTY-NOT-FOUND)) 
+        (is-under-collateralized (unwrap! (is-undercollateralized property-id) 
+ERR-PROPERTY-NOT-FOUND))) 
+    (asserts! is-under-collateralized ERR-INSUFFICIENT-COLLATERAL) 
+    (asserts! (or (is-eq tx-sender CONTRACT-OWNER) (is-eq tx-sender (get owner 
+property-data))) ERR-NOT-AUTHORIZED) 
+     
+    (map-set properties  
+      { property-id: property-id } 
+      (merge property-data { is-active: false })) 
+    (ok true)))
+    ;; Read-only functions for querying state 
+(define-read-only (get-property (property-id uint)) 
+  (map-get? properties { property-id: property-id })) 
+ 
+(define-read-only (get-token-balance (property-id uint) (holder principal)) 
+  (default-to u0 (get balance (map-get? token-balances { property-id: property-id, holder: 
+holder })))) 
+ 
+(define-read-only (get-rental-distribution (property-id uint) (distribution-id uint)) 
+  (map-get? rental-distributions { property-id: property-id, distribution-id: distribution-id })) 
+ 
+(define-read-only (has-claimed-distribution (property-id uint) (holder principal) (distribution-id 
+uint)) 
+  (default-to false (get claimed (map-get? user-claimed-distributions { property-id: property-id, 
+holder: holder, distribution-id: distribution-id })))) 
+ 
+(define-read-only (get-next-property-id) 
+  (var-get next-property-id)) 
+ 
+(define-read-only (get-next-distribution-id) 
+  (var-get next-distribution-id))
